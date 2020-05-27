@@ -1,0 +1,20 @@
+venv/*
+.idea/*
+__pycache__
+.DS_Store
+# byte-compiled / optimized / DLL files
+*.py[cod]
+
+# tests and coverage
+*.pytest_cache
+.coverage
+
+# database & logs
+*.db
+*.log
+
+Dockerfile
+.env
+
+.vscode
+

@@ -1,0 +1,247 @@
+from flask import Blueprint, request, jsonify, make_response, current_app
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, jwt_refresh_token_required, get_jwt_identity
+from flask_cors import cross_origin
+
+import json, requests
+
+from datetime import datetime as dt
+from datetime import timedelta
+from flask import current_app as app
+
+from .. import helper
+from .. import db
+from .. import jwt
+from . import ipam_bp
+#from .authdb import tstUser
+
+config = helper.conf()
+db.create_all()
+
+ipam_url  = config['IPAM']['IPAM_HOST']
+ipam_port = config['IPAM']['IPAM_PORT']
+ipam_maxips = int(config['IPAM']['IPAM_MAXIPS'])
+
+ipam_api = "http://"+ipam_url+":"+ipam_port
+
+print("IPAM API",ipam_api)
+
+# Test endpoint
+@ipam_bp.route('/test', methods=['GET','POST'])
+@cross_origin()
+#@jwt_refresh_token_required
+def test():
+
+	test_msg = {
+		'ok' : True,
+		'message' : 'Successfully connected to IPAM/TEST endpoint!'
+	}
+	print("HEADERS")
+	print(request.headers)
+	print("PAYLOAD")
+	print(request.json)
+	print()
+
+	return make_response(jsonify(test_msg)), 201
+
+def UserConfirm(userId):
+	print("API Endpoint: User Confirm, ID = ", userId)
+	api_userconfirm = ipam_api + '/users/' + userId + '/confirm'
+	print("API Endpoint: User Confirm", api_userconfirm)
+	headers = {'content-type': 'application/json' }
+	r = requests.get(url=api_userconfirm)		#, headers=headers)
+	jsondata = json.loads(r.text)
+	
+	print("STATUS",r.status_code)
+	print("REASON", r.reason)
+	print("JSON  ",jsondata)
+	print("")
+	authtoken = jsondata['token']
+	print("TOKEN",authtoken)
+	print("")
+		
+	return authtoken
+
+
+def UserRegister(payload):
+	print("API Endpoint: User Create/Register")
+	api_usercreate = ipam_api + '/users/create'
+	print(api_usercreate,payload)
+	headers = {'content-type': 'application/json' }
+	r = requests.post(url=api_usercreate, data=json.dumps(payload), headers=headers)
+	jsondata = json.loads(r.text)
+	print("RESPONSE",jsondata)
+	userid = jsondata['_id']
+	print("Status",r.status_code)
+	print("Reason", r.reason)
+	print("JSON  ",jsondata)
+	print("")
+	print("_ID",userid)
+	print("")
+	
+	authtoken = UserConfirm(userid)
+	return userid, authtoken
+
+
+def AddressCheckout(payload):
+	print("IPAM Endpoint: Address Checkout")
+	#reqdata = json.loads(payload)
+	
+	network = payload['network']
+	fqdn = payload['fqdn']
+	token = payload['ipam_token']
+	ipcount = int(payload['ipcount'])
+	
+	api_addresscheckout = ipam_api +'/addresses/checkout?network=' +network+ '&fqdn=' +fqdn
+	
+	print(api_addresscheckout)
+	print("Access Token",token)
+	headers = {'content-type': 'application/json','Authorization': 'Bearer ' + token }
+	
+	if ipcount > 0 and ipcount < ipam_maxips:
+		ipamResult = []
+		for _ in range(ipcount):
+			r = requests.get(url=api_addresscheckout, headers=headers)
+			
+			jsondata = json.loads(r.text)
+			
+			addressId = jsondata['addresses']['_id']
+			address = jsondata['addresses']['address']
+			#print("IP Issued",address)
+			#print("")
+			
+			
+			ipamItem = {
+				'fqdn': fqdn,
+				'ipaddress': address,		
+				'network': network,
+				'ipaddressid': addressId
+			}
+			ipamResult.append(ipamItem)
+	
+		return ipamResult
+		
+	else:
+		response = {
+			'ok' : False,
+			'message' : 'Invalid ip count requested, max 10 ips.'
+		}
+		return response
+
+# IP Request endpoint
+@ipam_bp.route('/iprequest', methods=['GET','POST'])
+def ip_request():
+	"""Create a user."""
+	print(request.headers)
+	print(request.json)
+	data = request.get_json()
+	ip_data = AddressCheckout(data)
+	if ip_data['ok']:			
+		return make_response(jsonify({'ok': False, 'message': ip_data['message']})), 401
+	else:	
+		return make_response(jsonify({'ok': True, 'message': 'IPAM IP Address issued successfully!', 'ip_data':ip_data})), 201
+	
+# Login endpoint
+@ipam_bp.route('/login', methods=['GET','POST'])		
+def UserLogin(payload):
+	print("API: UserLogin")
+	api_userlogin = ipam_api + '/users/login'
+	print(api_userlogin,payload)
+	headers = {'content-type': 'application/json' }
+	r = requests.patch(url=api_userlogin, data=json.dumps(payload), headers=headers)
+	
+	jsondata = json.loads(r.text)
+	
+	print("STATUS",r.status_code)
+	print("REASON", r.reason)
+	print("JSON  ",jsondata)
+	print("")
+	authtoken = jsondata['token']
+	userid = jsondata['user']['_id']
+	print("TOKEN",authtoken)
+	print("")
+		
+	return  userid,	authtoken
+
+# Register endpoint
+@ipam_bp.route('/register', methods=['GET','POST'])
+def signup_user():
+	"""Create a user."""
+	print(request.headers)
+	print(request.json)
+	data = request.get_json()
+
+	email = data['emailAddress'].lower()
+	password = data['password']
+	username = data['userName'].upper()
+	mobile = data['mobilePhone']
+	
+	ipamUsr = {
+		'userName': username, 
+		'emailAddress': email,
+		'mobilePhone': mobile,
+		'password': password
+	}
+	
+	usr_id, authtkn = UserRegister(ipamUsr)
+	
+	return make_response(jsonify({'ok': True, 'message': 'IPAM User created successfully!', 'ipam_id':usr_id})), 201
+
+
+
+def Addresses(payload):
+	print("IPAM Endpoint: Addresses List")
+	
+	network = payload['network']
+	#fqdn = payload['fqdn']
+	token = payload['ipam_token']
+	#ipcount = int(payload['ipcount'])
+	
+	api_addresscheckout = ipam_api +'/addresses?network=' +network
+	
+	print(api_addresscheckout)
+	print("Access Token",token)
+	headers = {'content-type': 'application/json','Authorization': 'Bearer ' + token }
+	
+	r = requests.get(url=api_addresscheckout, headers=headers)	
+	jsondata = json.loads(r.text)
+	
+	return jsondata
+	
+# IP Request endpoint
+@ipam_bp.route('/addresses', methods=['GET','POST'])
+def ip_addresses():
+	"""Create a user."""
+	print(request.headers)
+	print(request.json)
+	data = request.get_json()
+	ip_data = Addresses(data)
+	
+	return make_response(jsonify({'ok': True, 'message': 'IPAM IP Address issued successfully!', 'ip_data':ip_data})), 201	
+			
+.env
+FLASK_APP=server.py
+FLASK_ENV=development
+DATABASE_URL=postgresql://hello_flask:hello_flask@192.168.1.213:5432/devdb1
+
+DATABASE_USER="pspdbu"
+DATABASE_PASSWORD="#pspdbu"
+DATABASE_HOST="172.16.2.204"
+DATABASE_PORT="5432"
+DATABASE_NAME="pspappdb"
+
+APP_FOLDER=/usr/src/app
+
+# Mail Configuration
+MAIL_SERVER = 'smtp.googlemail.com'
+MAIL_PORT = 587
+MAIL_USE_TLS = True
+MAIL_USERNAME = ''
+MAIL_PASSWORD = '!'
+
+ADMINS = ['postmaster@']
+
+
+# IPAM Configuration
+IPAM_HOST="localhost" "docker-bcx-prd.sanlam.co.za:3000"
+IPAM_PORT="3000"
+IPAM_MAXIPS="10"

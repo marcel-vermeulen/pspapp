@@ -1,0 +1,14 @@
+version: '3.7'
+
+services:
+  nginx:
+    build: .
+    volumes:
+      - uploads_volume:/home/app/web/app/uploads
+    ports:
+      - 8888:80
+    env_file:
+      - ./.env.dev
+
+volumes:
+  uploads_volume:

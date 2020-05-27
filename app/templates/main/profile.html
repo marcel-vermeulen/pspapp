@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block app_content %}
+  <h1>Hello {{ current_user.firstname }}!</h1>
+  
+  <div class="table-responsive">
+    <table class="table">
+      <tr>
+        <th style="width:30%">MUD ID</th>
+        <td>{{ current_user.username }}</td>
+      </tr>
+      <tr>
+        <th>Last Logon</th>
+        <td>{{ current_user.lastlogon }}</td>
+      </tr>          
+      <tr>
+        <th>Email</th>
+        <td>{{ current_user.email }}</td>
+      </tr>
+      <tr>
+        <th>Firstname</th>
+        <td>{{ current_user.firstname }}</td>
+      </tr>
+      <tr>
+        <th>Surname</th>
+        <td>{{ current_user.surname }}</td>
+      </tr>
+      <tr>
+        <th>Mobile</th>
+        <td>{{ current_user.mobile }}</td>
+      </tr>
+      <tr>
+        <th>Joined</th>
+        <td>{{ current_user.created }}</td>
+      </tr>            
+    </table>
+  </div>
+  <hr>
+
+{% endblock %}
